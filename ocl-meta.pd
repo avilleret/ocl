@@ -1,0 +1,8 @@
+#N canvas 11 144 200 200 10;
+#N canvas 589 246 420 300 META 1;
+#X text 13 10 NAME ocl;
+#X text 10 30 AUTHOR Antoine Villeret <antoine.villeret@gmail.com>
+;
+#X text 10 85 LICENSE;
+#X text 10 65 VERSION 0.1;
+#X restore 10 10 pd META;
