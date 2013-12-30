@@ -6,7 +6,7 @@ LIBRARY_NAME = ocl
 # add your .cpp source files, one object per file, to the SOURCES
 # variable, help files will be included automatically, and for GUI
 # objects, the matching .tcl file too
-SOURCES = ocl_test.cpp
+SOURCES = ocl_test.cpp ocl_texreadback.cpp
 
 # list all pd objects (i.e. myobject.pd) files here, and their helpfiles will
 # be included automatically
