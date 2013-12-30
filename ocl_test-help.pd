@@ -1,9 +1,14 @@
-#N canvas 1031 206 450 300 10;
+#N canvas 1029 211 450 300 10;
 #X obj 177 48 gemhead;
 #X obj 54 128 gemwin;
 #X msg 54 80 create \, 1;
 #X msg 64 100 destroy;
 #X obj 177 122 ocl_test;
+#X text 26 182 this external doesn't do anything but test the working
+flow of OpenCL inside Pd;
+#X text 38 229 it puts some hardcoded data to GPU RAM \, make some
+computation thanks to GPU \, get the result back to CPU RAM and then
+prints it in cout (terminal);
 #X connect 0 0 4 0;
 #X connect 2 0 1 0;
 #X connect 3 0 1 0;
