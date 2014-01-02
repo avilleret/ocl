@@ -66,10 +66,8 @@ class GEM_EXTERN ocl_texreadback : public GemShape
       cl_context CreateContext();
       cl_command_queue CreateCommandQueue(cl_context context, cl_device_id *device);
       cl_program CreateProgram(cl_context context, cl_device_id device, const char* fileName);
-      bool CreateMemObjects(cl_context context, cl_mem memObjects[3],
-                      float *a, float *b);
-      void Cleanup(cl_context context, cl_command_queue commandQueue,
-             cl_program program, cl_kernel kernel, cl_mem memObjects[3]);
+      bool CreateMemObjects(cl_context context, GLuint texture, GLuint vbo, cl_mem *p_cl_vbo_mem, cl_mem *p_cl_tex_mem);
+      void Cleanup();
              
              
       //////////
@@ -80,16 +78,30 @@ class GEM_EXTERN ocl_texreadback : public GemShape
       void         stopRendering(void);
     
     private:
+    
+      void performQueries();
+      void initTexture( int width, int height );
+      GLuint initVBO(int vbolen );
+      cl_int computeTexture(), computeVBO();
+      void renderVBO( int vbolen );
+      void displayTexture(int w, int h);
+      
+      GLuint tex, vbo;
+      int vbolen, imWidth, imHeight;
+
       cl_context context;
       cl_command_queue commandQueue;
       cl_program program;
       cl_device_id device;
-      cl_kernel kernel;
+      cl_kernel kernel, tex_kernel;
+      cl_mem cl_vbo_mem, cl_tex_mem;
       cl_mem memObjects[3];
       
       float result[ARRAY_SIZE];
       float a[ARRAY_SIZE];
       float b[ARRAY_SIZE];
+      
+      bool m_opencl_is_init;
       
 };
 
