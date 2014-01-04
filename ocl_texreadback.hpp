@@ -18,6 +18,7 @@ LOG
 #include "Base/GemShape.h"
 #include "Gem/State.h"
 #include "Gem/Exception.h"
+#include "Gem/Image.h"
 
 #include <iostream>
 #include <fstream>
@@ -53,6 +54,8 @@ class GEM_EXTERN ocl_texreadback : public GemShape
         //////////
         // Constructor
     	ocl_texreadback(t_floatarg size);
+      
+      void extTextureMess(t_symbol*, int, t_atom*);
 
     protected:
 
@@ -66,42 +69,45 @@ class GEM_EXTERN ocl_texreadback : public GemShape
       cl_context CreateContext();
       cl_command_queue CreateCommandQueue(cl_context context, cl_device_id *device);
       cl_program CreateProgram(cl_context context, cl_device_id device, const char* fileName);
-      bool CreateMemObjects(cl_context context, GLuint texture, GLuint vbo, cl_mem *p_cl_vbo_mem, cl_mem *p_cl_tex_mem);
+      bool CreateMemObjects(cl_context context, GLuint texture, cl_mem *p_cl_tex_mem,  cl_mem *p_cl_binBuf_mem);
       void Cleanup();
              
              
       //////////
       // Create OpenCL context *AFTER* OpenGL Context
-      void         startRendering(void);
+      void         initOpenCL(GemState *state);
       //////////
       // Clean up OpenCL context
       void         stopRendering(void);
+
+      GLuint	   m_textureObj;
+       GLuint	    m_extTextureObj;
+
+      t_outlet	*m_outTexID;
+
     
     private:
     
       void performQueries();
-      void initTexture( int width, int height );
-      GLuint initVBO(int vbolen );
-      cl_int computeTexture(), computeVBO();
-      void renderVBO( int vbolen );
-      void displayTexture(int w, int h);
+      cl_int computeTexture();
       
-      GLuint tex, vbo;
-      int vbolen, imWidth, imHeight;
+      GLuint texture;
+      int m_width, m_height;
+      GLint m_extType;
+      GLboolean m_extUpsidedown;
 
       cl_context context;
       cl_command_queue commandQueue;
       cl_program program;
       cl_device_id device;
-      cl_kernel kernel, tex_kernel;
-      cl_mem cl_vbo_mem, cl_tex_mem;
-      cl_mem memObjects[3];
-      
-      float result[ARRAY_SIZE];
-      float a[ARRAY_SIZE];
-      float b[ARRAY_SIZE];
+      cl_kernel tex_kernel;
+      cl_mem cl_tex_mem;
+      cl_mem cl_bin_mem;
       
       bool m_opencl_is_init;
+      bool *m_binBuf;
+      imageStruct *m_binaryImage;
+      pixBlock m_pixBlock;
       
 };
 

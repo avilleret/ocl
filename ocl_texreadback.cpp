@@ -14,8 +14,6 @@
 //
 /////////////////////////////////////////////////////////
 
-const int ARRAY_SIZE = 100;
-
 #include "ocl_texreadback.hpp"
 
 CPPEXTERN_NEW_WITH_ONE_ARG(ocl_texreadback, t_floatarg, A_DEFFLOAT);
@@ -230,25 +228,25 @@ cl_program ocl_texreadback :: CreateProgram(cl_context context, cl_device_id dev
 //  Create memory objects used as the arguments to kernels in OpenCL
 //  The memory objects are created from existing OpenGL buffers and textures
 //
-bool ocl_texreadback :: CreateMemObjects(cl_context context, GLuint texture, GLuint vbo, cl_mem *p_cl_vbo_mem, cl_mem *p_cl_tex_mem)
+bool ocl_texreadback :: CreateMemObjects(cl_context context, GLuint texture, cl_mem *p_cl_tex_mem, cl_mem *p_cl_binBuf_mem)
 {
 	cl_int errNum;
-
-	*p_cl_vbo_mem = clCreateFromGLBuffer(context, CL_MEM_READ_WRITE, vbo, &errNum );
-	if( errNum != CL_SUCCESS )
-	{
-		std::cerr<< "Failed creating memory from GL buffer." << std::endl;
-		return false;
-	}
 	
-	*p_cl_tex_mem = clCreateFromGLTexture2D(context, CL_MEM_READ_WRITE, GL_TEXTURE_RECTANGLE_ARB, 0, texture, &errNum );
+	*p_cl_tex_mem = clCreateFromGLTexture2D(context, CL_MEM_READ_ONLY, GL_TEXTURE_RECTANGLE_ARB, 0, texture, &errNum );
 	if( errNum != CL_SUCCESS )
 	{
 		std::cerr<< "Failed creating memory from GL texture." << std::endl;
 		return false;
 	}
+  
+  *p_cl_binBuf_mem = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(bool) * m_width * m_height, NULL, NULL);
 
-    return true;
+  if ( cl_bin_mem == NULL)
+  {
+    std::cerr << "Error creating memory objects." << std::endl;
+    return false;
+  }
+  return true;
 }
 
 ///
@@ -271,149 +269,31 @@ void ocl_texreadback :: Cleanup()
         context=0;
     }
 
-    if (kernel != 0){
-        clReleaseKernel(kernel);
-        kernel=0;
-    }
-    
     if( tex_kernel != 0 ){
       clReleaseKernel(tex_kernel);
       tex_kernel=0;
-    }
-
-    if( cl_vbo_mem != 0 ){
-      clReleaseMemObject(cl_vbo_mem);
-      cl_vbo_mem=0;
     }
 
     if( cl_tex_mem != 0 ){
       clReleaseMemObject(cl_tex_mem);
       cl_tex_mem=0;
     }
-      
-    // after we have released the OpenCL references, we can delete the underlying OpenGL objects
-    if( vbo != 0 )
-    {
-      glBindBuffer(GL_ARRAY_BUFFER_ARB, vbo);
-      glDeleteBuffers(1, &vbo);
-      vbo=0;
-    }
-    if( tex != 0 ) 
-    {
-      glBindBuffer(GL_TEXTURE_RECTANGLE_ARB, tex );
-      glDeleteBuffers(1, &tex);
-      tex=0;
-    }
+
     post("Cleanup() complete");
 }
 
-void ocl_texreadback :: initTexture( int width, int height )
-{
-    // make a texture for output
-	glGenTextures(1, &tex);              // texture 
-    glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE,  GL_REPLACE );
-    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, tex);
-    glTexImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA32F_ARB, width,
-            height, 0, GL_LUMINANCE, GL_FLOAT, NULL );
-}
-
-GLuint ocl_texreadback :: initVBO(int vbolen )
-{
-    GLint bsize;
-
-    GLuint vbo_buffer; 
-    // generate the buffer
-    glGenBuffers(1, &vbo_buffer);
-    
-    // bind the buffer 
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_buffer); 
-	if( glGetError() != GL_NO_ERROR ) {
-		std::cerr<<"Could not bind buffer"<<std::endl;
-	}
-    
-    // create the buffer, this basically sets/allocates the size
-	// for our VBO we will hold 2 line endpoints per element
-    glBufferData(GL_ARRAY_BUFFER, vbolen*sizeof(float)*4, NULL, GL_STREAM_DRAW);  
-	if( glGetError() != GL_NO_ERROR ) {
-		std::cerr<<"Could not bind buffer"<<std::endl;
-	}
-    // recheck the size of the created buffer to make sure its what we requested
-    glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &bsize); 
-    if ((GLuint)bsize != (vbolen*sizeof(float)*4)) {
-        printf("Vertex Buffer object (%d) has incorrect size (%d).\n", (unsigned)vbo_buffer, (unsigned)bsize);
-    }
-
-    // we're done, so unbind the buffers
-    glBindBuffer(GL_ARRAY_BUFFER, 0);                    
-	if( glGetError() != GL_NO_ERROR ) {
-		std::cerr<<"Could not bind buffer"<<std::endl;
-	}
-	return vbo_buffer;
-}
-
-
-cl_int ocl_texreadback :: computeVBO()
-{
-	cl_int errNum;
-
-	// a small internal counter for animation
-	static cl_int seq = 0;
-	seq = (seq+1)%(imWidth);
-
-    // Set the kernel arguments, send the cl_mem object for the VBO
-    errNum = clSetKernelArg(kernel, 0, sizeof(cl_mem), &cl_vbo_mem);
-    errNum = clSetKernelArg(kernel, 1, sizeof(cl_int), &imWidth);
-    errNum = clSetKernelArg(kernel, 2, sizeof(cl_int), &imHeight);
-    errNum = clSetKernelArg(kernel, 3, sizeof(cl_int), &seq);
-    if (errNum != CL_SUCCESS)
-    {
-        std::cerr << "Error setting kernel arguments." << std::endl;
-        Cleanup();
-        return 1;
-    }
-
-    size_t globalWorkSize[1] = { vbolen };
-    size_t localWorkSize[1] = { 32 };
-
-	// Acquire the GL Object
-	// Note, we should ensure GL is completed with any commands that might affect this VBO
-	// before we issue OpenCL commands
-	glFinish();
-	errNum = clEnqueueAcquireGLObjects(commandQueue, 1, &cl_vbo_mem, 0, NULL, NULL );
-
-    // Queue the kernel up for execution across the array
-    errNum = clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL,
-                                    globalWorkSize, localWorkSize,
-                                    0, NULL, NULL);
-    if (errNum != CL_SUCCESS)
-    {
-        std::cerr << "Error queuing kernel for execution." << std::endl;
-    }
-
-	// Release the GL Object
-	// Note, we should ensure OpenCL is finished with any commands that might affect the VBO
-	errNum = clEnqueueReleaseGLObjects(commandQueue, 1, &cl_vbo_mem, 0, NULL, NULL );
-	clFinish(commandQueue);
-	return 0;
-}
-
-
 ///
-// Use OpenCL to compute the colors on the texture background
-// Bascially the same functionality as the VBO, execpt operating on a texture object
+// Use OpenCL to process texture data
 cl_int ocl_texreadback :: computeTexture()
 {
 	cl_int errNum;
 
-	static cl_int seq =0;
-	seq = (seq+1)%(imWidth*2);
-
     errNum = clSetKernelArg(tex_kernel, 0, sizeof(cl_mem), &cl_tex_mem);
-    errNum = clSetKernelArg(tex_kernel, 1, sizeof(cl_int), &imWidth);
-    errNum = clSetKernelArg(tex_kernel, 2, sizeof(cl_int), &imHeight);
-    errNum = clSetKernelArg(tex_kernel, 3, sizeof(cl_int), &seq);
+    errNum = clSetKernelArg(tex_kernel, 1, sizeof(cl_mem), &cl_bin_mem);
+    errNum = clSetKernelArg(tex_kernel, 2, sizeof(cl_int), &m_width);
+    errNum = clSetKernelArg(tex_kernel, 3, sizeof(cl_int), &m_height);
 	
-	size_t tex_globalWorkSize[2] = { imWidth, imHeight };
+	size_t tex_globalWorkSize[2] = { m_width, m_height };
 	size_t tex_localWorkSize[2] = { 32, 4 } ;
 
 	glFinish();
@@ -427,52 +307,11 @@ cl_int ocl_texreadback :: computeTexture()
         std::cerr << "Error queuing kernel for execution." << std::endl;
     }
 	errNum = clEnqueueReleaseGLObjects(commandQueue, 1, &cl_tex_mem, 0, NULL, NULL );
+  
 	clFinish(commandQueue);
 	return 0;
 }
 
-///
-// Render the vertex buffer object (VBO) contents
-//
-void ocl_texreadback :: renderVBO( int vbolen ) 
-{
-	glColor3f(1.0f, 1.0f, 1.0f);
-	glLineWidth(2.0f);
-    // Draw VBO containing the point list coordinates, to place GL_POINTS at feature locations
-    // bind VBOs for vertex array and index array
-    glBindBufferARB(GL_ARRAY_BUFFER_ARB, vbo);         // for vertex coordinates
-    glEnableClientState(GL_VERTEX_ARRAY);             // activate vertex coords array
-    glVertexPointer( 2, GL_FLOAT, 0, 0 );
-	 
-    // draw lines with endpoints given in the array
-    glDrawArrays(GL_LINES, 0, vbolen*2);
-
-    glDisableClientState(GL_VERTEX_ARRAY);            // deactivate vertex array
-
-    // bind with 0, so, switch back to normal pointer operation
-    glBindBufferARB(GL_ARRAY_BUFFER_ARB, 0);
-}
-
-
-///
-// Display the texture in the window
-//
-void ocl_texreadback :: displayTexture(int w, int h)
-{
-	glEnable(GL_TEXTURE_RECTANGLE_ARB);
-	glBindTexture(GL_TEXTURE_RECTANGLE_ARB, tex );
-	glBegin(GL_QUADS);
-		glTexCoord2f(0, 0);
-		glVertex2f(0, 0);
-		glTexCoord2f(0, h);
-		glVertex2f(0, h);
-		glTexCoord2f(w, h);
-		glVertex2f(w, h);
-		glTexCoord2f(w, 0);
-		glVertex2f(w, 0);
-	glEnd();
-	glDisable(GL_TEXTURE_RECTANGLE_ARB);
-}
 
 /////////////////////////////////////////////////////////
 //
@@ -484,31 +323,28 @@ void ocl_texreadback :: displayTexture(int w, int h)
 /////////////////////////////////////////////////////////
 ocl_texreadback :: ocl_texreadback(t_floatarg size)
         : GemShape(size),
-        tex(0),
-        vbo(0),
+        texture(1),
+        m_width(-1),
+        m_height(-1),
         context(0),
         commandQueue(0),
         program(0),
         device(0),
-        kernel(0),
         tex_kernel(0),
-        cl_vbo_mem(0),
         cl_tex_mem(0),
-        memObjects({0,0,0})
+        cl_bin_mem(NULL),
+        m_binBuf(NULL),
+        m_binaryImage(NULL)
 {
   m_opencl_is_init=false;
+  
+  m_outTexID = outlet_new(this->x_obj, &s_float);
 }
 
-void ocl_texreadback :: startRendering(void)
+void ocl_texreadback :: initOpenCL(GemState *state)
 {
-  
-    imWidth = 256; 
-    imHeight = 256;
-    vbolen = imHeight;
+    if ( m_width < 0 || m_height < 0 ) return;
 
-    vbo = initVBO(vbolen);
-    initTexture(imWidth,imHeight);
-    // Create an OpenCL context on first available platform
     // Create an OpenCL context on first available platform
     context = CreateContext();
     if (context == NULL)
@@ -529,8 +365,8 @@ void ocl_texreadback :: startRendering(void)
         return;
     }
 
-    // Create OpenCL program from GLinterop.cl kernel source
-    program = CreateProgram(context, device, "GLinterop.cl");
+    // Create OpenCL program from *.cl kernel source
+    program = CreateProgram(context, device, "ocl_texreadback.cl");
     if (program == NULL)
     {
         Cleanup();
@@ -539,17 +375,7 @@ void ocl_texreadback :: startRendering(void)
         return;
     }
 
-    // Create OpenCL kernel
-    kernel = clCreateKernel(program, "init_vbo_kernel", NULL);
-    if (kernel == NULL)
-    {
-        Cleanup();
-        error("Failed to create kernel");
-        m_opencl_is_init = false;
-        return;
-    }
-
-    tex_kernel = clCreateKernel(program, "init_texture_kernel", NULL);
+    tex_kernel = clCreateKernel(program, "process_texture_kernel", NULL);
     if (tex_kernel == NULL)
     {
         Cleanup();
@@ -560,7 +386,7 @@ void ocl_texreadback :: startRendering(void)
 
     // Create memory objects that will be used as arguments to
     // kernel
-    if (!CreateMemObjects(context, tex, vbo, &cl_vbo_mem, &cl_tex_mem))
+    if (!CreateMemObjects(context, texture, &cl_tex_mem, &cl_bin_mem))
     {
         Cleanup();
         error("Failed to create mem objects");
@@ -591,31 +417,103 @@ ocl_texreadback :: ~ocl_texreadback()
 /////////////////////////////////////////////////////////
 void ocl_texreadback :: renderShape(GemState *state)
 {
-  //~if(m_drawType==GL_DEFAULT_GEM)m_drawType=GL_QUADS;
-    //~glNormal3f(0.0f, 0.0f, 1.0f);
-    //~if (m_drawType == GL_LINE_LOOP)
-        //~glLineWidth(m_linewidth);
-//~
-    //~glBegin(m_drawType);
-//~
-    //~SetVertex(state, -m_size,  -m_size, 0.0f,0.,0.,0);
-    //~SetVertex(state, m_size,  -m_size, 0.0f,1.,0.,1);
-    //~SetVertex(state, m_size,  m_size, 0.0f,1.,1.,2);
-    //~SetVertex(state, -m_size,  m_size, 0.0f,0.,1.,3);
-//~
-    //~glEnd();
+    cl_int errNum;
+    
+    pixBlock *pix;
+    state->get(GemState::_PIX, pix);
+    int size=m_width * m_height;
+    
+    if ( !pix ) return;
+    
+    if ( m_width != pix->image.xsize || m_height != pix->image.ysize ){
+      // release previous data
+      if (m_binaryImage)  {
+        m_binaryImage->clear();
+        delete m_binaryImage;
+        m_binaryImage = NULL;
+      }
+      m_binaryImage = new imageStruct;
+      m_width = pix->image.xsize;
+      m_height = pix->image.ysize;
+      m_binaryImage->xsize = m_width;
+      m_binaryImage->ysize = m_height;
+      m_binaryImage->setCsizeByFormat(GL_LUMINANCE);
+      m_binaryImage->upsidedown = pix->image.upsidedown;
+
+      m_binaryImage->allocate(m_binaryImage->xsize * m_binaryImage->ysize * m_binaryImage->csize);
+      
+      size = m_width * m_height;
+      
+      if ( m_binBuf ){
+        delete m_binBuf;
+        m_binBuf=NULL;
+      }
+      m_binBuf = new bool[m_width * m_height];
+    }
     
     if ( !m_opencl_is_init ){
+      initOpenCL(state);
       //~error("OpenCL is not initialized properly");
       return;
     }
-    glClearColor(0.0f, 0.0f, 1.0f, 1.0f );
-    glClear( GL_COLOR_BUFFER_BIT );
+    
     computeTexture();
-    computeVBO();
-
-    displayTexture(imWidth,imHeight);
-    renderVBO( vbolen );
+    
+    errNum = clEnqueueReadBuffer(commandQueue, cl_bin_mem, CL_TRUE,
+                                 0, size * sizeof(bool), m_binBuf,
+                                 0, NULL, NULL);
+    if (errNum != CL_SUCCESS)
+    {
+        error("Error reading result buffer.");
+    } else {
+      
+      if ( m_binaryImage == NULL ){
+        error("can't get image pointer\n");
+        return;
+      }
+      
+      unsigned char* ptr = m_binaryImage->data;
+      for ( int i = 0; i < size; i++ ){
+          ptr[i] = m_binBuf[i]*255;
+      }
+      m_pixBlock.image = *m_binaryImage;
+      m_pixBlock.newimage = true;
+    }
+    state->set(GemState::_PIX, &m_pixBlock);
 }
 
-void ocl_texreadback :: obj_setupCallback(t_class *classPtr){}
+void ocl_texreadback :: obj_setupCallback(t_class *classPtr){
+  CPPEXTERN_MSG (classPtr, "extTexture", extTextureMess);
+}
+
+void ocl_texreadback :: extTextureMess(t_symbol*s, int argc, t_atom*argv)
+{
+  int index=5;
+  switch(argc){
+  case 5:
+    if(A_FLOAT!=argv[4].a_type)break;
+    m_extUpsidedown=atom_getint(argv+4);
+  case 4:
+    index=4;
+    if(A_FLOAT!=argv[3].a_type)break;
+    m_extType=atom_getint(argv+3);
+  case 3:
+    index=3;
+    if(A_FLOAT!=argv[2].a_type)break;
+    index=2;
+    if(A_FLOAT!=argv[1].a_type)break;
+    m_width =atom_getfloat(argv+1);
+    m_height=atom_getfloat(argv+2);
+  case 1:
+    index=1;
+    if(A_FLOAT!=argv[0].a_type)break;
+    m_extTextureObj=atom_getint(argv+0);
+    index=0;
+    return;
+  default:
+    error("arguments: <texId> [<width> <height> [<type> [<upsidedown>]]]");
+    return;
+  }
+  if(index)
+    error("invalid type of argument #%d", index);
+}
