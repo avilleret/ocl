@@ -1,7 +1,7 @@
 ocl is a library for puredata/Gem to use OpenCL
 
-the only object is a test copy and paste from HelloWorld.cpp found in OpenCL Programming Guide [1]
-
+[ocl_test] copy and paste from HelloWorld.cpp found in OpenCL Programming Guide [1]
+[ocl_texreadback] is a test for improving binary texture readback
 
 [1] : 
 Book:      OpenCL(R) Programming Guide
