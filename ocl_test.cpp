@@ -27,7 +27,6 @@ CPPEXTERN_NEW_WITH_ONE_ARG(ocl_test, t_floatarg, A_DEFFLOAT);
 cl_context ocl_test :: CreateContext()
 {
     cl_int errNum;
-    cl_uint numPlatforms;
     cl_platform_id firstPlatformId;
     cl_context context = NULL;
 
@@ -222,7 +221,8 @@ void ocl_test :: Cleanup(cl_context context, cl_command_queue commandQueue,
 /////////////////////////////////////////////////////////
 ocl_test :: ocl_test(t_floatarg size)
         : GemShape(size),
-        context(0),
+        numPlatforms(0),
+        context(NULL),
         commandQueue(0),
         program(0),
         device(0),
